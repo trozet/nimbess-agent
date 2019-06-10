@@ -17,6 +17,7 @@
 package drivers
 
 import (
+	"github.com/nimbess/nimbess-agent/pkg/network"
 	"google.golang.org/grpc"
 )
 
@@ -24,6 +25,7 @@ import (
 type Driver interface {
 	// TODO define more methods for a generic Data Plane driver
 	Connect() *grpc.ClientConn
+	AddModule(module *network.Module, pModule *network.Module, nModule *network.Module) error
 }
 
 // DriverConfig represents the generic driver configuration required by Driver.

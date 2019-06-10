@@ -69,7 +69,7 @@ func main() {
 	flag.Parse()
 
 	if _, err := os.Stat(*logDir); os.IsNotExist(err) {
-		os.Mkdir(*logDir, 0644)
+		_ = os.Mkdir(*logDir, 0644)
 	}
 	logFile, e := os.OpenFile(filepath.Join(*logDir, LogFile), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
 	if e != nil {
@@ -81,8 +81,11 @@ func main() {
 
 	nimbessConfig := agent.InitConfig(*confFile)
 	driver := selectDriver(nimbessConfig)
+	// Create Pipeline map of per port pipelines
+	nimbessPipelineMap := make(map[string]*agent.NimbessPipeline)
 	// Start agent
-	nimbessAgent := agent.NimbessAgent{Mu: &sync.Mutex{}, Config: nimbessConfig, Driver: driver}
+	nimbessAgent := agent.NimbessAgent{Mu: &sync.Mutex{}, Config: nimbessConfig, Driver: driver,
+		Pipelines: nimbessPipelineMap}
 	if err := nimbessAgent.Run(); err != nil {
 		log.Fatalf("Nimbess Agent has died: %v", err)
 	}

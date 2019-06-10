@@ -17,6 +17,7 @@ package bess
 
 import (
 	"fmt"
+	"github.com/nimbess/nimbess-agent/pkg/network"
 
 	"github.com/nimbess/nimbess-agent/pkg/drivers"
 
@@ -39,4 +40,9 @@ func (d *Driver) Connect() *grpc.ClientConn {
 	}
 	log.Info("Connected to BESS")
 	return conn
+}
+
+func (d *Driver) AddModule(module *network.Module, pModule *network.Module, nModule *network.Module) error {
+	log.Infof("Adding module to BESS %v", module)
+	return nil
 }
