@@ -14,8 +14,8 @@
 # jetbrains ide stuff
 .idea*
 
-.swp*
-.swo*
+*.swp*
+*.swo*
 
 bin/
 

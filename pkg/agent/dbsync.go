@@ -12,17 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Pipeline defines a uni-directional series of Modules connected together
+package agent
+import (
+	log "github.com/sirupsen/logrus"
+)
 
-package network
+// Purpose of dbsync is to manage synchronizing DB -> agent runtime on startup
+// After successful a successful startup + dbsync, the runtime memory is considered to be the source of truth
+// and consequent resource modifications occur first in runtime and then written to DB
 
-type L2FIBEntry struct {
-	Permanent bool
-	Age       int64
-	Port      string
-}
-
-// Pipeline is a generic network pipeline of network modules
-type Pipeline interface {
-	GetModule(name string) PipelineModule
+func (s *NimbessAgent) dbSync() error {
+	// need to list resources from bottom up
+	// check resources exist in Agent
+	// check resources exist in dataplane
+	// if DNE create resource in agent and DP (via single agent call)
+	log.Info("Initiating Agent sync from DB")
+	return nil
 }

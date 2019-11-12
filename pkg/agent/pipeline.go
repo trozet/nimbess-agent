@@ -38,7 +38,7 @@ type NimbessPipeline struct {
 	EgressPorts []*network.EgressPort
 	MetaKey     string
 	Gateway     string
-	l2fib       map[string]*L2FIBEntry
+	l2fib       map[string]*network.L2FIBEntry
 }
 
 // GetModule returns the module
@@ -115,7 +115,7 @@ func (s *NimbessPipeline) Init(port string, forwarder string, metaPipeline *Nimb
 		}
 		// Need to create meta pipeline from scratch, just include forwarder module
 		mod, err := getForwarderModule(forwarder, s.MetaKey)
-		s.l2fib = make(map[string]*L2FIBEntry)
+		s.l2fib = make(map[string]*network.L2FIBEntry)
 		if err != nil {
 			return err
 		}

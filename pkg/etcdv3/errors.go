@@ -61,3 +61,12 @@ type ErrorDatastoreError struct {
 func (e ErrorDatastoreError) Error() string {
 	return e.Err.Error()
 }
+
+type ErrorResourceDoesNotExist struct {
+	Err        error
+	Identifier interface{}
+}
+
+func (e ErrorResourceDoesNotExist) Error() string {
+	return fmt.Sprintf("resource does not exist: %v with error: %v", e.Identifier, e.Err)
+}

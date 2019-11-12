@@ -23,11 +23,13 @@ import (
 	"github.com/nimbess/nimbess-agent/pkg/agent/config"
 	"github.com/nimbess/nimbess-agent/pkg/etcdv3/model"
 	log "github.com/sirupsen/logrus"
+	"strconv"
 	"strings"
 )
 
 type Client interface {
 	Create(ctx context.Context, object *model.KVPair) error
+	Get(ctx context.Context, k model.Key) (*model.KVPair, error)
 	Delete(ctx context.Context, k model.Key) error
 	Watch(ctx context.Context, prefix string) clientv3.WatchChan
 	Close()
@@ -102,6 +104,37 @@ func (c *EtcdV3Client) Delete(ctx context.Context, k model.Key) error {
 		return NewKeyExistsError(key, 0)
 	}
 	return nil
+}
+
+// Get an entry from the datastore.  This errors if the entry does not exist.
+func (c *EtcdV3Client) Get(ctx context.Context, k model.Key) (*model.KVPair, error) {
+	log.WithFields(log.Fields{"key": k.String()}).Debug("Get request")
+
+	key, err := model.KeyToDefaultPath(k)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.etcdClient.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.Kvs) == 0 {
+		log.Debug("No results returned from etcdv3 client")
+		return nil,ErrorResourceDoesNotExist{Identifier: k}
+	}
+
+	v, err := model.ParseValue(k, resp.Kvs[0].Value)
+	if err != nil {
+		log.WithFields(log.Fields{"value": resp.Kvs[0].Value}).Error("Parsing value failed")
+		return nil, err
+	}
+	return &model.KVPair{
+		Key: k,
+		Value: v,
+		Revision: strconv.FormatInt(resp.Kvs[0].ModRevision, 10),
+	}, nil
+
 }
 
 // Watch starts a watcher on a prefix and returns the channel

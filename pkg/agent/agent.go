@@ -57,6 +57,7 @@ const (
 	CniTryLater          = 11
 	DriverFailure        = 101
 	FastPathFailure      = 102
+	DatabaseFailure      = 103
 	InternalIPAM         = "nimbess"
 	FastPathNetwork      = "fastpath"
 	DefaultBaseCNIDir    = "/var/lib/nimbess/cni"
@@ -71,11 +72,7 @@ var ipAddrFast = net.IP{50, 0, 0, 0}
 // Used to track BESS vhost PMD Ports
 var vhostIndex = 0
 
-type L2FIBEntry struct {
-	permanent bool
-	age       int64
-	port      string
-}
+
 
 // NimbessAgent represents the agent runtime server.
 // It contains a loadable runtime data plane driver to manage the data plane.
@@ -125,6 +122,12 @@ func (s *NimbessAgent) createPortPipeline(port *network.Port, metaKey string) (*
 	if err := s.Pipelines[portName].Init(portName, config.L2DriverMode, s.MetaPipelines[metaKey]); err != nil {
 		log.Error("Error while initializing Port Pipeline: %v", err)
 		return &cni.CNIReply{Result: CniIncompatible}, err
+	}
+
+	// Store port in DB
+	if err := etcdv3.CreatePort(s.EtcdClient, s.EtcdContext, *port, s.ID); err != nil {
+		log.Errorf("failed to create port %s in etcd. Error is: %v", portName, err)
+		return &cni.CNIReply{}, err
 	}
 
 	// Create Port in Nimbess Pipeline
@@ -498,10 +501,10 @@ func (s *NimbessAgent) updateFIB(pipeline *NimbessPipeline, port network.EgressP
 			log.Errorf("Unable to find Forwarding Module in pipeline: %s", pipeline.Name)
 			return errors.New("unable to find Forwarding Module in Pipeline")
 		}
-		pipeline.l2fib[port.MacAddr] = &L2FIBEntry{
-			permanent: true,
-			age:       0,
-			port:      port.GetName(),
+		pipeline.l2fib[port.MacAddr] = &network.L2FIBEntry{
+			Permanent: true,
+			Age:       0,
+			Port:      port.GetName(),
 		}
 		// If L2 get MAC and update FIB with forwarder outgoing gate to EgressPort
 		// TODO this means that the forwarder must be directly connected to EgressPort,
@@ -603,7 +606,7 @@ func (s *NimbessAgent) Delete(ctx context.Context, req *cni.CNIRequest) (*cni.CN
 	entriesToDelete := make([]string, 0)
 	if pipeline, ok := s.Pipelines[reqPortName]; ok {
 		for MAC, entry := range pipeline.l2fib {
-			if entry.port == reqPortName {
+			if entry.Port == reqPortName {
 				entriesToDelete = append(entriesToDelete, MAC)
 			}
 		}
@@ -647,6 +650,10 @@ func (s *NimbessAgent) Delete(ctx context.Context, req *cni.CNIRequest) (*cni.CN
 		// Finally delete port
 		if err := s.Driver.DeletePort(portName); err != nil {
 			return &cni.CNIReply{Result: DriverFailure}, err
+		}
+
+		if err := etcdv3.DeletePort(s.EtcdClient, s.EtcdContext, portName, s.ID); err != nil {
+			return &cni.CNIReply{Result: DatabaseFailure}, err
 		}
 
 		s.Driver.Commit()
@@ -740,10 +747,10 @@ func (s *NimbessAgent) processNotification() bool {
 		// Learned
 		entry, ok := pipeline.l2fib[fibRequest.MAC]
 		if !ok {
-			pipeline.l2fib[fibRequest.MAC] = &L2FIBEntry{
-				permanent: false,
-				age:       fibRequest.Setage,
-				port:      fibRequest.Port,
+			pipeline.l2fib[fibRequest.MAC] = &network.L2FIBEntry{
+				Permanent: false,
+				Age:       fibRequest.Setage,
+				Port:      fibRequest.Port,
 			}
 			for key, targetPipeline := range s.Pipelines {
 				if key != fibRequest.Port {
@@ -752,14 +759,14 @@ func (s *NimbessAgent) processNotification() bool {
 				}
 			}
 		} else {
-			if !entry.permanent {
-				entry.age = time.Now().Unix()
+			if !entry.Permanent {
+				entry.Age = time.Now().Unix()
 			}
 		}
 	}
 	if fibRequest.Command == "EXPIRE" {
 		entry, ok := pipeline.l2fib[fibRequest.MAC]
-		if ok && (!entry.permanent) {
+		if ok && (!entry.Permanent) {
 			delete(pipeline.l2fib, fibRequest.MAC)
 			for _, targetPipeline := range s.Pipelines {
 				s.delMACfromFIB(fibRequest.MAC, targetPipeline)
@@ -767,10 +774,10 @@ func (s *NimbessAgent) processNotification() bool {
 		}
 	}
 	if fibRequest.Command == "ADD" {
-		pipeline.l2fib[fibRequest.MAC] = &L2FIBEntry{
-			permanent: true,
-			age:       0,
-			port:      fibRequest.Port,
+		pipeline.l2fib[fibRequest.MAC] = &network.L2FIBEntry{
+			Permanent: true,
+			Age:       0,
+			Port:      fibRequest.Port,
 		}
 		for key, targetPipeline := range s.Pipelines {
 			if key != fibRequest.Port {
@@ -812,6 +819,10 @@ func (s *NimbessAgent) Init() error {
 			if cerr.Code == etcdv3.ErrCodeKeyExists {
 				firstStart = false
 				log.Info("Previous agent data detected in database")
+				if err := s.dbSync(); err != nil {
+					log.Errorf("Error while executing DB sync: %v", err)
+					return err
+				}
 			} else {
 				return err
 			}
